@@ -1,3 +1,5 @@
+# KmpSam
+
 This is a Kotlin Multiplatform project targeting Android, iOS.
 
 * [/composeApp](./composeApp/src) is for code that will be shared across your Compose Multiplatform applications.
@@ -9,6 +11,17 @@ This is a Kotlin Multiplatform project targeting Android, iOS.
 
 * [/iosApp](./iosApp/iosApp) contains iOS applications. Even if you’re sharing your UI with Compose Multiplatform,
   you need this entry point for your iOS app. This is also where you should add SwiftUI code for your project.
+
+
+### Prerequisites
+
+We're using cocoapods to manage the Obective-C dependencies in KMP. You need to install it, for example using homebrew:
+
+```shell
+brew install cocoapods
+```
+
+If there are issues with the cocoapods installation, see the [KMP documentation](https://www.jetbrains.com/help/kotlin-multiplatform-dev/multiplatform-cocoapods-overview.html#set-up-an-environment-to-work-with-cocoapods) on the cocoapods integration.
 
 ### Build and Run Android Application
 
@@ -25,8 +38,7 @@ in your IDE’s toolbar or build it directly from the terminal:
 
 ### Build and Run iOS Application
 
-To build and run the development version of the iOS app, use the run configuration from the run widget
-in your IDE’s toolbar or open the [/iosApp](./iosApp) directory in Xcode and run it from there.
+To build and run the development version of the iOS app, run `cd iosApp && pod install` and open the [/iosApp](./iosApp) directory in Xcode. Then run it from there.
 
 ---
 
