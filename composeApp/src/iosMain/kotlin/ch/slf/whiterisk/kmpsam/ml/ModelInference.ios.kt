@@ -168,16 +168,17 @@ actual class ModelInference {
             for ((name, dataAndShape) in inputs) {
                 val (data, shape) = dataAndShape
                 log("  Creating input '$name': shape=${shape.contentToString()}, data size=${data.size}")
-
-                val isInt64 = name.contains("label", ignoreCase = true)
-
+                
+                // Only orig_im_size should be INT64, everything else is FLOAT
+                val isInt64 = name == "orig_im_size"
+                
                 val tensor = if (isInt64) {
                     log("    Creating INT64 tensor for '$name'")
                     createInt64Tensor(data, shape)
                 } else {
                     createFloatTensor(data, shape)
                 }
-
+                
                 inputTensors[name] = tensor
             }
 

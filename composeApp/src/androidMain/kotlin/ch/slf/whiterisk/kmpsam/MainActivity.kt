@@ -11,6 +11,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        
+        // Initialize platform context for model loading
+        PlatformContext.init(this)
 
         setContent {
             App()

@@ -104,15 +104,43 @@ actual class SAMImagePreprocessor {
             
             val cacheFile = File(androidContext.cacheDir, assetPath)
             
-            // Only copy if file doesn't exist or is outdated
+            // Only copy if file doesn't exist
             if (!cacheFile.exists()) {
                 cacheFile.parentFile?.mkdirs()
                 
-                androidContext.assets.open(assetPath).use { input ->
-                    FileOutputStream(cacheFile).use { output ->
-                        input.copyTo(output)
+                try {
+                    // Try to open from assets
+                    println("SAMImagePreprocessor.Android: Trying to open asset: $assetPath")
+                    
+                    androidContext.assets.open(assetPath).use { input ->
+                        println("SAMImagePreprocessor.Android: ✓ Asset found, copying to cache...")
+                        FileOutputStream(cacheFile).use { output ->
+                            val bytes = input.copyTo(output)
+                            println("SAMImagePreprocessor.Android: ✓ Copied $bytes bytes to ${cacheFile.absolutePath}")
+                        }
                     }
+                } catch (e: Exception) {
+                    // List available assets for debugging
+                    println("SAMImagePreprocessor.Android: ✗ Failed to open asset: $assetPath")
+                    println("SAMImagePreprocessor.Android: Error: ${e.message}")
+                    println("SAMImagePreprocessor.Android: Listing available assets:")
+                    try {
+                        val assetsList = androidContext.assets.list("") ?: emptyArray()
+                        assetsList.forEach { println("  - $it") }
+                        
+                        if (assetPath.contains("/")) {
+                            val folder = assetPath.substringBeforeLast("/")
+                            println("SAMImagePreprocessor.Android: Contents of '$folder':")
+                            val folderContents = androidContext.assets.list(folder) ?: emptyArray()
+                            folderContents.forEach { println("  - $folder/$it") }
+                        }
+                    } catch (e2: Exception) {
+                        println("SAMImagePreprocessor.Android: Could not list assets: ${e2.message}")
+                    }
+                    throw IllegalStateException("Model file not found in assets: $assetPath", e)
                 }
+            } else {
+                println("SAMImagePreprocessor.Android: ✓ Model already cached at ${cacheFile.absolutePath}")
             }
             
             return cacheFile.absolutePath
