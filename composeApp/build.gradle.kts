@@ -55,9 +55,6 @@ kotlin {
             implementation(compose.preview)
             implementation(libs.androidx.activity.compose)
             implementation(libs.onnxruntime.android)
-            implementation(libs.androidx.camera.view)
-            implementation(libs.androidx.camera.lifecycle)
-            implementation(libs.androidx.camera.camera2)
             implementation(libs.accompanist.permissions)
         }
         commonMain.dependencies {

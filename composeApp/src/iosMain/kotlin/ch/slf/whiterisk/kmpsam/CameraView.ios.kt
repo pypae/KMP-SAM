@@ -1,27 +1,26 @@
 package ch.slf.whiterisk.kmpsam
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.interop.UIKitView
-import kotlinx.cinterop.CValue
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.readValue
+import kotlinx.cinterop.refTo
+import kotlinx.cinterop.useContents
+import org.jetbrains.skia.Image
 import platform.AVFoundation.*
-import platform.CoreGraphics.CGRect
-import platform.QuartzCore.CATransaction
-import platform.QuartzCore.kCATransactionDisableActions
-import platform.UIKit.UIView
+import platform.Foundation.getBytes
+import platform.UIKit.*
+import platform.UniformTypeIdentifiers.UTTypeImage
+import platform.darwin.NSObject
+import platform.darwin.dispatch_async
+import platform.darwin.dispatch_get_main_queue
 
 @OptIn(ExperimentalForeignApi::class)
 @Composable
-actual fun CameraView() {
+actual fun CameraView(onImageCaptured: (ImageBitmap?) -> Unit, onDismiss: () -> Unit) {
     var permissionGranted by remember { mutableStateOf(false) }
     var permissionChecked by remember { mutableStateOf(false) }
+    var pickerPresented by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         val status = AVCaptureDevice.authorizationStatusForMediaType(AVMediaTypeVideo)
@@ -32,8 +31,10 @@ actual fun CameraView() {
             }
             AVAuthorizationStatusNotDetermined -> {
                 AVCaptureDevice.requestAccessForMediaType(AVMediaTypeVideo) { granted ->
-                    permissionGranted = granted
-                    permissionChecked = true
+                    dispatch_async(dispatch_get_main_queue()) {
+                        permissionGranted = granted
+                        permissionChecked = true
+                    }
                 }
             }
             else -> {
@@ -43,102 +44,113 @@ actual fun CameraView() {
         }
     }
 
-    when {
-        !permissionChecked -> {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("Checking camera permission...")
+    LaunchedEffect(permissionChecked, permissionGranted, pickerPresented) {
+        if (permissionChecked && !pickerPresented) {
+            if (permissionGranted) {
+                pickerPresented = true
+                presentImagePicker(
+                    onImageCaptured = { image ->
+                        dispatch_async(dispatch_get_main_queue()) {
+                            onImageCaptured(image)
+                        }
+                    },
+                    onDismiss = {
+                        dispatch_async(dispatch_get_main_queue()) {
+                            onDismiss()
+                        }
+                    }
+                )
+            } else {
+                onDismiss()
             }
-        }
-        !permissionGranted -> {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("Camera permission is required")
-            }
-        }
-        else -> {
-            CameraPreview()
         }
     }
 }
 
+// Store delegate as a global to keep it alive
+private var currentDelegate: Any? = null
+
 @OptIn(ExperimentalForeignApi::class)
-@Composable
-private fun CameraPreview() {
-    val device = remember {
-        AVCaptureDevice.defaultDeviceWithMediaType(AVMediaTypeVideo)
-    }
-
-    if (device == null) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("Camera not available")
-        }
-        return
-    }
-
-    val session = remember {
-        AVCaptureSession().apply {
-            beginConfiguration()
-            sessionPreset = AVCaptureSessionPresetHigh
-            
-            val input = try {
-                AVCaptureDeviceInput.deviceInputWithDevice(device, null)
-            } catch (e: Exception) {
-                println("Error creating camera input: $e")
-                null
-            }
-            
-            if (input != null && canAddInput(input)) {
-                addInput(input)
-                println("Camera input added successfully")
-            } else {
-                println("Failed to add camera input")
-            }
-            
-            commitConfiguration()
-        }
-    }
-
-    val cameraPreviewLayer = remember { 
-        AVCaptureVideoPreviewLayer(session = session).apply {
-            videoGravity = AVLayerVideoGravityResizeAspectFill
-        }
-    }
-
-    DisposableEffect(session) {
-        kotlinx.cinterop.autoreleasepool {
-            session.startRunning()
-            println("Camera session started: ${session.running}")
-        }
+private fun presentImagePicker(
+    onImageCaptured: (ImageBitmap?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val picker = UIImagePickerController()
+    picker.sourceType = UIImagePickerControllerSourceType.UIImagePickerControllerSourceTypeCamera
+    picker.allowsEditing = false
+    picker.mediaTypes = listOf(UTTypeImage.identifier)
+    
+    val delegate = object : NSObject(), UIImagePickerControllerDelegateProtocol,
+        UINavigationControllerDelegateProtocol {
         
-        onDispose {
-            session.stopRunning()
-            println("Camera session stopped")
-        }
-    }
-
-    UIKitView(
-        modifier = Modifier.fillMaxSize(),
-        background = Color.Black,
-        factory = {
-            val container = object : UIView(frame = platform.CoreGraphics.CGRectZero.readValue()) {
-                override fun layoutSubviews() {
-                    super.layoutSubviews()
-                    CATransaction.begin()
-                    CATransaction.setValue(true, kCATransactionDisableActions)
-                    cameraPreviewLayer.setFrame(this.bounds)
-                    CATransaction.commit()
+        override fun imagePickerController(
+            picker: UIImagePickerController,
+            didFinishPickingMediaWithInfo: Map<Any?, *>
+        ) {
+            val image = didFinishPickingMediaWithInfo[UIImagePickerControllerOriginalImage] as? UIImage
+            
+            picker.dismissViewControllerAnimated(true) {
+                dispatch_async(dispatch_get_main_queue()) {
+                    if (image != null) {
+                        val imageBitmap = image.toImageBitmap()
+                        onImageCaptured(imageBitmap)
+                    } else {
+                        onImageCaptured(null)
+                    }
+                    currentDelegate = null
                 }
             }
-            container.layer.addSublayer(cameraPreviewLayer)
-            container
         }
-    )
+        
+        override fun imagePickerControllerDidCancel(picker: UIImagePickerController) {
+            picker.dismissViewControllerAnimated(true) {
+                dispatch_async(dispatch_get_main_queue()) {
+                    onDismiss()
+                    currentDelegate = null
+                }
+            }
+        }
+    }
+    
+    // Keep delegate alive
+    currentDelegate = delegate
+    picker.delegate = delegate
+    
+    // Get the root view controller and present modally
+    val rootViewController = UIApplication.sharedApplication.keyWindow?.rootViewController
+    rootViewController?.presentViewController(picker, animated = true, completion = null)
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun UIImage.toImageBitmap(): ImageBitmap? {
+    return try {
+        // Fix orientation by redrawing the image
+        val fixedImage = this.fixOrientation()
+        
+        val nsData = UIImagePNGRepresentation(fixedImage) ?: return null
+        val bytes = ByteArray(nsData.length.toInt())
+        kotlinx.cinterop.memScoped {
+            nsData.getBytes(bytes.refTo(0).getPointer(this), nsData.length)
+        }
+        Image.makeFromEncoded(bytes).toComposeImageBitmap()
+    } catch (e: Exception) {
+        println("Error converting UIImage to ImageBitmap: $e")
+        null
+    }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun UIImage.fixOrientation(): UIImage {
+    // If image is already in correct orientation, return as is
+    if (imageOrientation == UIImageOrientation.UIImageOrientationUp) {
+        return this
+    }
+    
+    // Create a graphics context and redraw the image in the correct orientation
+    UIGraphicsBeginImageContextWithOptions(size, false, scale)
+    drawInRect(platform.CoreGraphics.CGRectMake(0.0, 0.0, size.useContents { width }, size.useContents { height }))
+    val normalizedImage = UIGraphicsGetImageFromCurrentImageContext()
+    UIGraphicsEndImageContext()
+    
+    return normalizedImage ?: this
 }
