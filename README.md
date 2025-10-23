@@ -40,6 +40,18 @@ in your IDE’s toolbar or build it directly from the terminal:
 
 To build and run the development version of the iOS app, run `cd iosApp && pod install` and open the [/iosApp](./iosApp) directory in Xcode. Then run it from there.
 
+
+### Setup
+
+Before you can build the iOS app, you need to download the ONNX models and place them in the two folders: `composeApp/src/androidMain/assets/models` and `iosApp/iosApp/Resources/models`. Implementation tested with SAM 2.1 Tiny.
+
+[SAM 2.1 Tiny](https://huggingface.co/rectlabel/segment-anything-onnx-models/resolve/main/sam2.1_tiny.zip)
+[SAM 2.1 Small](https://huggingface.co/rectlabel/segment-anything-onnx-models/resolve/main/sam2.1_small.zip)
+[SAM 2.1 BasePlus](https://huggingface.co/rectlabel/segment-anything-onnx-models/resolve/main/sam2.1_baseplus.zip)
+[SAM 2.1 Large](https://huggingface.co/rectlabel/segment-anything-onnx-models/resolve/main/sam2.1_large.zip)
+
+Unzip the files and copy the `sam2.1_tiny.onnx` as well as the `sam2.1_tiny_preprocess.onnx` file to the `models` folder.
+
 ---
 
 Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html)…
