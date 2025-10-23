@@ -21,6 +21,10 @@ actual class ModelInference {
 
     companion object {
         private const val TAG = "ModelInference.iOS"
+        
+        // Set to false to disable CoreML and use CPU only (reduces memory usage)
+        // If you experience memory crashes, set this to false
+        private const val ENABLE_COREML = true  // Disabled by default due to high memory usage
 
         private fun log(message: String) {
             println("[$TAG] $message")
@@ -35,6 +39,7 @@ actual class ModelInference {
     /**
      * Loads the ONNX model from the specified path.
      */
+    @OptIn(BetaInteropApi::class)
     actual fun loadModel(modelPath: String) {
         try {
             log("Loading model from: $modelPath")
@@ -65,6 +70,70 @@ actual class ModelInference {
                 }
             }
 
+            // Configure session options for memory optimization
+            sessionOptions?.let { options ->
+                try {
+                    memScoped {
+                        val errorPtr = alloc<ObjCObjectVar<NSError?>>()
+                        
+                        // Set graph optimization level to reduce memory usage
+                        // Use ORT_ENABLE_BASIC instead of ORT_ENABLE_ALL to reduce memory overhead
+                        options.setGraphOptimizationLevel(ORTGraphOptimizationLevel.ORTGraphOptimizationLevelBasic, errorPtr.ptr)
+                        
+                        errorPtr.value?.let { error ->
+                            log("⚠ Failed to set graph optimization level: ${error.localizedDescription}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    log("⚠ Failed to configure session options: ${e.message}")
+                }
+            }
+
+            // Configure CoreML Execution Provider for hardware acceleration
+            // Note: CoreML compilation can be memory intensive - disabled by default
+            if (ENABLE_COREML) {
+                log("Attempting to enable CoreML Execution Provider...")
+                sessionOptions?.let { options ->
+                    try {
+                        memScoped {
+                            val errorPtr = alloc<ObjCObjectVar<NSError?>>()
+                            
+                            // Create CoreML execution provider options
+                            val coreMLOptions = ORTCoreMLExecutionProviderOptions()
+                            
+                            // Configure options to reduce memory usage
+                            coreMLOptions.useCPUOnly = false
+                            coreMLOptions.enableOnSubgraphs = false
+                            coreMLOptions.onlyEnableForDevicesWithANE = false
+
+                            // Try to append CoreML execution provider
+                            options.appendCoreMLExecutionProviderWithOptions(
+                                coreMLOptions,
+                                errorPtr.ptr
+                            )
+
+                            options.setIntraOpNumThreads(1, errorPtr.ptr)
+
+                            errorPtr.value?.let { error ->
+                                // CoreML EP is optional - log warning but continue
+                                log("⚠ CoreML EP not available: ${error.localizedDescription}")
+                                log("  Falling back to CPU execution")
+                            } ?: run {
+                                log("✓ CoreML Execution Provider enabled")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // If CoreML fails, continue with CPU - don't fail the entire model load
+                        log("⚠ Failed to enable CoreML EP: ${e.message}")
+                        log("  Continuing with CPU execution")
+                    }
+                }
+            } else {
+                log("CoreML Execution Provider disabled (using CPU only)")
+                log("  This reduces memory usage and prevents memory crashes")
+                log("  To enable CoreML, set ENABLE_COREML = true in ModelInference.ios.kt")
+            }
+
             // Create session
             memScoped {
                 val errorPtr = alloc<ObjCObjectVar<NSError?>>()
@@ -88,7 +157,7 @@ actual class ModelInference {
             // Get input names
             memScoped {
                 val errorPtr = alloc<ObjCObjectVar<NSError?>>()
-                val inputs = currentSession.inputNamesWithError(errorPtr.ptr) as? List<*>
+                val inputs = currentSession.inputNamesWithError(errorPtr.ptr)
 
                 errorPtr.value?.let { error ->
                     throw Exception("Failed to get input names: ${error.localizedDescription}")
@@ -102,7 +171,7 @@ actual class ModelInference {
             // Get output names
             memScoped {
                 val errorPtr = alloc<ObjCObjectVar<NSError?>>()
-                val outputs = currentSession.outputNamesWithError(errorPtr.ptr) as? List<*>
+                val outputs = currentSession.outputNamesWithError(errorPtr.ptr)
 
                 errorPtr.value?.let { error ->
                     throw Exception("Failed to get output names: ${error.localizedDescription}")
